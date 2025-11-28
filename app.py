@@ -248,7 +248,7 @@ if not st.session_state.files_uploaded:
     st.markdown("**Upload your CrewAI files and error logs for expert analysis**")
     st.markdown("</div>", unsafe_allow_html=True)
     
-    st.header("📁 Upload System Files")
+    st.header("Upload System Files")
     
     col1, col2, col3 = st.columns(3)
     
