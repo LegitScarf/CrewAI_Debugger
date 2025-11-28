@@ -214,8 +214,8 @@ def send_message(user_message, initial=False):
         client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
         
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=8000,
+            model="claude-3-haiku-20240307",
+            # max_tokens=8000,
             system=system_prompt,
             messages=messages
         )
@@ -253,21 +253,21 @@ if not st.session_state.files_uploaded:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.subheader("👥 agents.yaml *")
+        st.subheader("agents.yaml *")
         agents_file = st.file_uploader("Upload agents.yaml", type=['yaml', 'yml'], key="agents")
         
-        st.subheader("📋 tasks.yaml *")
+        st.subheader("tasks.yaml *")
         tasks_file = st.file_uploader("Upload tasks.yaml", type=['yaml', 'yml'], key="tasks")
     
     with col2:
-        st.subheader("🚢 crew.py *")
+        st.subheader("crew.py *")
         crew_file = st.file_uploader("Upload crew.py", type=['py'], key="crew")
         
-        st.subheader("⚙️ main.py *")
+        st.subheader("main.py *")
         main_file = st.file_uploader("Upload main.py", type=['py'], key="main")
     
     with col3:
-        st.subheader("🛠️ tools.py")
+        st.subheader("tools.py")
         st.caption("(Optional)")
         tools_file = st.file_uploader("Upload tools.py", type=['py'], key="tools")
     
@@ -288,7 +288,7 @@ if not st.session_state.files_uploaded:
     with col1:
         st.caption("* Required files")
     with col2:
-        if st.button("🚀 Start Debugging Session", type="primary", use_container_width=True,
+        if st.button("Start Debugging Session", type="primary", use_container_width=True,
                     disabled=not (agents_file and tasks_file and crew_file and main_file)):
             # Store files in session state
             if agents_file:
@@ -306,7 +306,7 @@ if not st.session_state.files_uploaded:
             st.session_state.files_uploaded = True
             
             # Send initial analysis request
-            with st.spinner("🔄 Analyzing your CrewAI system..."):
+            with st.spinner("Analyzing your CrewAI system..."):
                 send_message("Please analyze my CrewAI system and identify any issues.", initial=True)
             
             st.rerun()
@@ -316,17 +316,17 @@ else:
     col1, col2, col3 = st.columns([2, 3, 1])
     
     with col1:
-        st.title("🤖 CrewAI Debugger")
+        st.title("CrewAI Debugger")
     
     with col3:
-        if st.button("🔄 New Session", use_container_width=True):
+        if st.button("New Session", use_container_width=True):
             st.session_state.conversation_history = []
             st.session_state.files_uploaded = False
             st.session_state.files = {}
             st.session_state.error_log = ''
             st.rerun()
         
-        if st.button("📥 Export Chat", use_container_width=True, 
+        if st.button("Export Chat", use_container_width=True, 
                     disabled=len(st.session_state.conversation_history) == 0):
             conversation_text = ""
             for msg in st.session_state.conversation_history:
@@ -377,7 +377,7 @@ else:
         send_button = st.button("📤 Send", type="primary", use_container_width=True)
     
     if send_button and user_input.strip():
-        with st.spinner("🔄 Thinking..."):
+        with st.spinner("Thinking..."):
             send_message(user_input)
         st.rerun()
 
