@@ -1,6 +1,7 @@
 import streamlit as st
 import anthropic
 from datetime import datetime
+import time
 
 st.set_page_config(
     page_title="CrewAI System Debugger",
@@ -111,6 +112,8 @@ if 'files' not in st.session_state:
     st.session_state.files = {}
 if 'error_log' not in st.session_state:
     st.session_state.error_log = ''
+if 'processing' not in st.session_state:
+    st.session_state.processing = False
 
 def build_conversation_context():
     """Build context from uploaded files and error log"""
@@ -214,8 +217,8 @@ def send_message(user_message, initial=False):
         client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
         
         message = client.messages.create(
-            model="claude-3-haiku-20240307",
-            # max_tokens=8000,
+            model="claude-sonnet-4-20250514",
+            max_tokens=8000,
             system=system_prompt,
             messages=messages
         )
@@ -244,7 +247,7 @@ def send_message(user_message, initial=False):
 if not st.session_state.files_uploaded:
     # Upload Interface
     st.markdown("<div class='main-header'>", unsafe_allow_html=True)
-    st.title("🤖 CrewAI System Debugger")
+    st.title("CrewAI System Debugger")
     st.markdown("**Upload your CrewAI files and error logs for expert analysis**")
     st.markdown("</div>", unsafe_allow_html=True)
     
@@ -304,11 +307,7 @@ if not st.session_state.files_uploaded:
             
             st.session_state.error_log = error_log
             st.session_state.files_uploaded = True
-            
-            # Send initial analysis request
-            with st.spinner("Analyzing your CrewAI system..."):
-                send_message("Please analyze my CrewAI system and identify any issues.", initial=True)
-            
+            st.session_state.processing = True
             st.rerun()
 
 else:
@@ -324,10 +323,10 @@ else:
             st.session_state.files_uploaded = False
             st.session_state.files = {}
             st.session_state.error_log = ''
+            st.session_state.processing = False
             st.rerun()
         
-        if st.button("Export Chat", use_container_width=True, 
-                    disabled=len(st.session_state.conversation_history) == 0):
+        if len(st.session_state.conversation_history) > 0:
             conversation_text = ""
             for msg in st.session_state.conversation_history:
                 role = msg["role"].upper()
@@ -335,46 +334,60 @@ else:
                 conversation_text += f"**{role}** ({timestamp}):\n{msg['content']}\n\n---\n\n"
             
             st.download_button(
-                label="Download Conversation",
+                label="Export Chat",
                 data=conversation_text,
                 file_name=f"crewai_conversation_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-                mime="text/markdown"
+                mime="text/markdown",
+                use_container_width=True
             )
     
     st.markdown("---")
     
+    # Process initial analysis if needed
+    if st.session_state.processing and len(st.session_state.conversation_history) == 0:
+        with st.spinner("Analyzing your CrewAI system... This may take a moment."):
+            success = send_message("Please analyze my CrewAI system and identify any issues.", initial=True)
+            if success:
+                st.session_state.processing = False
+                st.rerun()
+    
     # Display conversation history
-    chat_container = st.container()
-    with chat_container:
-        for msg in st.session_state.conversation_history:
-            if msg["role"] == "user":
-                st.markdown(f"""
-                <div class="chat-message user-message">
-                    <div class="message-role">👤 You • {datetime.fromisoformat(msg["timestamp"]).strftime("%H:%M:%S")}</div>
-                    <div class="message-content">{msg["content"]}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div class="chat-message assistant-message">
-                    <div class="message-role">🤖 AI Assistant • {datetime.fromisoformat(msg["timestamp"]).strftime("%H:%M:%S")}</div>
-                    <div class="message-content">
-                """, unsafe_allow_html=True)
-                st.markdown(msg["content"], unsafe_allow_html=True)
-                st.markdown("</div></div>", unsafe_allow_html=True)
+    if len(st.session_state.conversation_history) > 0:
+        chat_container = st.container()
+        with chat_container:
+            for msg in st.session_state.conversation_history:
+                if msg["role"] == "user":
+                    st.markdown(f"""
+                    <div class="chat-message user-message">
+                        <div class="message-role">👤 You • {datetime.fromisoformat(msg["timestamp"]).strftime("%H:%M:%S")}</div>
+                        <div class="message-content">{msg["content"]}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown(f"""
+                    <div class="chat-message assistant-message">
+                        <div class="message-role">🤖 AI Assistant • {datetime.fromisoformat(msg["timestamp"]).strftime("%H:%M:%S")}</div>
+                        <div class="message-content">
+                    """, unsafe_allow_html=True)
+                    st.markdown(msg["content"], unsafe_allow_html=True)
+                    st.markdown("</div></div>", unsafe_allow_html=True)
+    else:
+        st.info("Waiting for initial analysis...")
     
     # Input area
     st.markdown("---")
-    user_input = st.text_input(
-        "Message",
-        placeholder="Ask a question about the analysis, request clarification, or get help implementing fixes...",
-        key="user_input",
-        label_visibility="collapsed"
-    )
     
-    col1, col2 = st.columns([5, 1])
-    with col2:
-        send_button = st.button("📤 Send", type="primary", use_container_width=True)
+    # Use form to prevent rerun on input change
+    with st.form(key='message_form', clear_on_submit=True):
+        user_input = st.text_input(
+            "Message",
+            placeholder="Ask a question about the analysis, request clarification, or get help implementing fixes...",
+            label_visibility="collapsed"
+        )
+        
+        col1, col2 = st.columns([5, 1])
+        with col2:
+            send_button = st.form_submit_button("📤 Send", type="primary", use_container_width=True)
     
     if send_button and user_input.strip():
         with st.spinner("Thinking..."):
