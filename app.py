@@ -247,7 +247,7 @@ def send_message(user_message, initial=False):
 if not st.session_state.files_uploaded:
     # Upload Interface
     st.markdown("<div class='main-header'>", unsafe_allow_html=True)
-    st.title("CrewAI System Debugger")
+    st.title(" 🔧 CrewAI System Debugger")
     st.markdown("**Upload your CrewAI files and error logs for expert analysis**")
     st.markdown("</div>", unsafe_allow_html=True)
     
@@ -315,7 +315,7 @@ else:
     col1, col2, col3 = st.columns([2, 3, 1])
     
     with col1:
-        st.title("CrewAI Debugger")
+        st.title(" 🔧 CrewAI Debugger")
     
     with col3:
         if st.button("New Session", use_container_width=True):
