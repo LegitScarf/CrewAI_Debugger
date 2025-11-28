@@ -2,10 +2,11 @@ import streamlit as st
 import anthropic
 from datetime import datetime
 import time
+import os
 
 st.set_page_config(
     page_title="CrewAI System Debugger",
-    page_icon="🤖",
+    page_icon="🔧",
     layout="wide"
 )
 
@@ -136,9 +137,13 @@ def build_conversation_context():
     return context
 
 def send_message(user_message, initial=False):
-    """Send message to Claude API"""
-    try:
-        system_prompt = """You are an expert CrewAI test engineer with over 15 years of experience in debugging and optimizing multi-agent systems. You are having a conversation with a developer who needs help with their CrewAI implementation.
+    """Send message to Claude API with retry logic"""
+    max_retries = 3
+    retry_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            system_prompt = """You are an expert CrewAI test engineer with over 15 years of experience in debugging and optimizing multi-agent systems. You are having a conversation with a developer who needs help with their CrewAI implementation.
 
 ## Your Role
 - Provide conversational, helpful responses
@@ -198,58 +203,110 @@ def send_message(user_message, initial=False):
 - Ask clarifying questions when needed
 - Acknowledge progress and celebrate fixes"""
 
-        messages = []
-        
-        # Add context on first message
-        if initial:
-            full_message = build_conversation_context() + "\n" + user_message
-            messages.append({"role": "user", "content": full_message})
-        else:
-            # Build conversation history
-            for msg in st.session_state.conversation_history:
-                messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
-            messages.append({"role": "user", "content": user_message})
+            messages = []
+            
+            # Add context on first message
+            if initial:
+                full_message = build_conversation_context() + "\n" + user_message
+                messages.append({"role": "user", "content": full_message})
+            else:
+                # Build conversation history
+                for msg in st.session_state.conversation_history:
+                    messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"]
+                    })
+                messages.append({"role": "user", "content": user_message})
 
-        # Call Claude API
-        client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
-        
-        message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=8000,
-            system=system_prompt,
-            messages=messages
-        )
-        
-        assistant_message = message.content[0].text
-        
-        # Add messages to conversation history
-        st.session_state.conversation_history.append({
-            "role": "user",
-            "content": user_message,
-            "timestamp": datetime.now().isoformat()
-        })
-        st.session_state.conversation_history.append({
-            "role": "assistant",
-            "content": assistant_message,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-        return True
-        
-    except Exception as e:
-        st.error(f"❌ Error: {str(e)}")
-        return False
+            # Get API key
+            api_key = None
+            if hasattr(st, 'secrets') and "ANTHROPIC_API_KEY" in st.secrets:
+                api_key = st.secrets["ANTHROPIC_API_KEY"]
+            elif "ANTHROPIC_API_KEY" in os.environ:
+                api_key = os.environ["ANTHROPIC_API_KEY"]
+            else:
+                st.error("❌ API key not found. Please add ANTHROPIC_API_KEY to your Streamlit secrets.")
+                return False
+            
+            # Validate API key format
+            if not api_key or not api_key.startswith('sk-ant-'):
+                st.error("❌ Invalid API key format. Anthropic API keys should start with 'sk-ant-'")
+                return False
+            
+            # Initialize client
+            client = anthropic.Anthropic(api_key=api_key)
+            
+            # Make API call with timeout
+            message = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=8000,
+                system=system_prompt,
+                messages=messages,
+                timeout=60.0  # 60 second timeout
+            )
+            
+            assistant_message = message.content[0].text
+            
+            # Add messages to conversation history
+            st.session_state.conversation_history.append({
+                "role": "user",
+                "content": user_message,
+                "timestamp": datetime.now().isoformat()
+            })
+            st.session_state.conversation_history.append({
+                "role": "assistant",
+                "content": assistant_message,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+            return True
+            
+        except anthropic.APIConnectionError as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Connection attempt {attempt + 1} failed. Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+                continue
+            else:
+                st.error(f"❌ Connection Error: Unable to reach Anthropic API after {max_retries} attempts.\n\nPossible causes:\n- Network connectivity issues\n- Streamlit Cloud firewall restrictions\n- Anthropic API is down\n\nPlease try again in a few moments.")
+                return False
+                
+        except anthropic.APIStatusError as e:
+            st.error(f"❌ API Status Error: {e.status_code}\n\nMessage: {str(e)}")
+            return False
+            
+        except anthropic.RateLimitError as e:
+            st.error(f"❌ Rate Limit Error: You've exceeded the API rate limit. Please wait a moment and try again.")
+            return False
+            
+        except anthropic.AuthenticationError as e:
+            st.error(f"❌ Authentication Error: Invalid API key. Please check your ANTHROPIC_API_KEY in Streamlit secrets.")
+            return False
+            
+        except Exception as e:
+            st.error(f"❌ Unexpected Error: {type(e).__name__}: {str(e)}\n\nIf this persists, please check:\n1. Your API key is valid\n2. You have internet connectivity\n3. Anthropic API status at status.anthropic.com")
+            return False
+    
+    return False
 
 # Main App Logic
 if not st.session_state.files_uploaded:
     # Upload Interface
     st.markdown("<div class='main-header'>", unsafe_allow_html=True)
-    st.title(" 🔧 CrewAI System Debugger")
+    st.title("🔧 CrewAI System Debugger")
     st.markdown("**Upload your CrewAI files and error logs for expert analysis**")
     st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Debug info (remove in production)
+    with st.expander("🔍 Debug Information"):
+        st.write("Checking API configuration...")
+        if hasattr(st, 'secrets') and "ANTHROPIC_API_KEY" in st.secrets:
+            api_key = st.secrets["ANTHROPIC_API_KEY"]
+            if api_key.startswith('sk-ant-'):
+                st.success("✅ API key found and format is correct")
+            else:
+                st.error("❌ API key found but format is incorrect (should start with 'sk-ant-')")
+        else:
+            st.error("❌ API key not found in secrets")
     
     st.header("Upload System Files")
     
@@ -315,7 +372,7 @@ else:
     col1, col2, col3 = st.columns([2, 3, 1])
     
     with col1:
-        st.title(" 🔧 CrewAI Debugger")
+        st.title("🔧 CrewAI Debugger")
     
     with col3:
         if st.button("New Session", use_container_width=True):
@@ -350,6 +407,8 @@ else:
             if success:
                 st.session_state.processing = False
                 st.rerun()
+            else:
+                st.session_state.processing = False
     
     # Display conversation history
     if len(st.session_state.conversation_history) > 0:
@@ -359,14 +418,14 @@ else:
                 if msg["role"] == "user":
                     st.markdown(f"""
                     <div class="chat-message user-message">
-                        <div class="message-role">👤 You • {datetime.fromisoformat(msg["timestamp"]).strftime("%H:%M:%S")}</div>
+                        <div class="message-role">You • {datetime.fromisoformat(msg["timestamp"]).strftime("%H:%M:%S")}</div>
                         <div class="message-content">{msg["content"]}</div>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
                     st.markdown(f"""
                     <div class="chat-message assistant-message">
-                        <div class="message-role">🤖 AI Assistant • {datetime.fromisoformat(msg["timestamp"]).strftime("%H:%M:%S")}</div>
+                        <div class="message-role">AI Assistant • {datetime.fromisoformat(msg["timestamp"]).strftime("%H:%M:%S")}</div>
                         <div class="message-content">
                     """, unsafe_allow_html=True)
                     st.markdown(msg["content"], unsafe_allow_html=True)
@@ -387,7 +446,7 @@ else:
         
         col1, col2 = st.columns([5, 1])
         with col2:
-            send_button = st.form_submit_button("📤 Send", type="primary", use_container_width=True)
+            send_button = st.form_submit_button("Send", type="primary", use_container_width=True)
     
     if send_button and user_input.strip():
         with st.spinner("Thinking..."):
